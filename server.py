@@ -9,6 +9,7 @@ import uuid
 import time
 import re
 import sys
+import random
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
 
@@ -98,36 +99,111 @@ def update_ytdlp():
         print(f"  ⚠ Update failed (continuing anyway): {e}")
 
 STRATEGIES = [
-    # 1. Cookies file (Highest Priority)
+    # 1. Cookies file (God Mode - Always First)
     {
         'name': 'Local Cookies File',
         'args': lambda: ['--cookies', str(Path(__file__).parent / 'cookies.txt')] 
                 if (Path(__file__).parent / 'cookies.txt').exists() else None
     },
-    # 2. Browser Cookies
+]
+
+# 2. Desktop Browsers (OS Optimized)
+BROWSER_STRATEGIES = [
     {'name': 'Chrome Cookies', 'args': lambda: ['--cookies-from-browser', 'chrome']},
     {'name': 'Edge Cookies', 'args': lambda: ['--cookies-from-browser', 'edge']},
     {'name': 'Firefox Cookies', 'args': lambda: ['--cookies-from-browser', 'firefox']},
-    {'name': 'Brave Cookies', 'args': lambda: ['--cookies-from-browser', 'brave']},
+    {'name': 'Safari Cookies', 'args': lambda: ['--cookies-from-browser', 'safari']},
+    {'name': 'Vivaldi Cookies', 'args': lambda: ['--cookies-from-browser', 'vivaldi']},
     {'name': 'Opera Cookies', 'args': lambda: ['--cookies-from-browser', 'opera']},
-    # 3. Mobile Clients (Bypass Login often)
+    {'name': 'Brave Cookies', 'args': lambda: ['--cookies-from-browser', 'brave']},
+    {'name': 'Chromium Cookies', 'args': lambda: ['--cookies-from-browser', 'chromium']},
+]
+
+# Optimize Browser Order based on OS
+if sys.platform == 'darwin': # macOS
+    # Prioritize Safari and Chrome on Mac
+    BROWSER_STRATEGIES.sort(key=lambda x: 0 if 'safari' in x['name'].lower() else (1 if 'chrome' in x['name'].lower() else 2))
+elif sys.platform == 'win32': # Windows
+    # Prioritize Edge and Chrome on Windows
+    BROWSER_STRATEGIES.sort(key=lambda x: 0 if 'edge' in x['name'].lower() else (1 if 'chrome' in x['name'].lower() else 2))
+
+# Only add browsers if NOT on Linux (Cloud/Server)
+if sys.platform != 'linux':
+    STRATEGIES.extend(BROWSER_STRATEGIES)
+
+# 3. Client Impersonation (Deep Cover)
+CLIENT_STRATEGIES = [
+    # Mobile - often bypasses age-gates
     {'name': 'Android Client', 'args': lambda: ['--extractor-args', 'youtube:player_client=android']},
     {'name': 'iOS Client', 'args': lambda: ['--extractor-args', 'youtube:player_client=ios']},
-    # 4. TV Client (Fallback)
+    # TV - different API endpoints
     {'name': 'Android TV', 'args': lambda: ['--extractor-args', 'youtube:player_client=android_tv']},
+    {'name': 'TV Embedded', 'args': lambda: ['--extractor-args', 'youtube:player_client=tv_embedded']},
+    # Console - High Trust
+    {'name': 'Xbox Client', 'args': lambda: ['--extractor-args', 'youtube:player_client=xbox']},
+    {'name': 'Switch Client', 'args': lambda: ['--extractor-args', 'youtube:player_client=switch']},
+    # Web - Masquerading as Privacy Browsers & Bots
+    {'name': 'Web (DuckDuckGo)', 'args': lambda: ['--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36', '--extractor-args', 'youtube:player_client=web']},
+    {'name': 'Web (Googlebot)', 'args': lambda: ['--user-agent', 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)', '--extractor-args', 'youtube:player_client=web']},
 ]
+STRATEGIES.extend(CLIENT_STRATEGIES)
+
+# ============ Advanced Hacker Config ============
+
+def get_proxy_args():
+    """Load random proxy from proxies.txt if exists"""
+    proxy_file = Path(__file__).parent / 'proxies.txt'
+    if proxy_file.exists():
+        try:
+            proxies = [l.strip() for l in proxy_file.read_text().splitlines() if l.strip() and not l.startswith('#')]
+            if proxies:
+                proxy = random.choice(proxies)
+                print(f"  🕵 Using Proxy: {proxy}")
+                return ['--proxy', proxy]
+        except Exception as e:
+            print(f"  ⚠ Proxy load failed: {e}")
+    return []
+
+def get_hacker_args():
+    """Load PO Token / Visitor Data from bot_config.json if exists"""
+    config_file = Path(__file__).parent / 'bot_config.json'
+    if config_file.exists():
+        try:
+            config = json.loads(config_file.read_text())
+            args = []
+            extractor_args = []
+            
+            if 'po_token' in config:
+                extractor_args.append(f"youtube:player-client=web;po_token={config['po_token']}")
+                print(f"  🎭 Injecting PO Token")
+            
+            if 'visitor_data' in config:
+                extractor_args.append(f"youtube:player_skip=webpage,configs;visitor_data={config['visitor_data']}")
+                print(f"  🎭 Injecting Visitor Data")
+                
+            if extractor_args:
+                for arg in extractor_args:
+                    args.extend(['--extractor-args', arg])
+            return args
+        except Exception as e:
+            print(f"  ⚠ Bot config load failed: {e}")
+    return []
 
 def find_working_strategy(url, ytdlp_path):
     """
     Brutal Mode: Try all strategies until one works.
     Returns: (working_args, video_info_dict)
     """
-    last_error = None
+    last_error = "No strategies attempted"
+    
+    # Pre-calculate global hacker args (Proxies + Tokens)
+    # These are applied to ALL strategies to boost them
+    global_args = get_proxy_args() + get_hacker_args()
     
     for strategy in STRATEGIES:
         strategy_args = strategy['args']()
         if strategy_args is None:
-            continue # Skip invalid strategies (e.g. missing cookies.txt)
+            continue 
             
         print(f"  ⚔ Trying Strategy: {strategy['name']}...")
         
@@ -136,10 +212,11 @@ def find_working_strategy(url, ytdlp_path):
             '--dump-json',
             '--no-download',
             '--no-warnings',
-        ] + strategy_args + [url]
+        ] + strategy_args + global_args + [url]
+
         
         try:
-            # Short timeout for checking strategies
+            # Short timeout
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=25)
             
             if result.returncode == 0:
@@ -147,19 +224,25 @@ def find_working_strategy(url, ytdlp_path):
                     info = json.loads(result.stdout)
                     print(f"  ✓ Success with: {strategy['name']}")
                     return strategy_args, info
-                except:
-                    pass
+                except json.JSONDecodeError:
+                    print(f"    ✗ Strategy {strategy['name']} returned invalid JSON.")
+                    last_error = f"{strategy['name']} returned invalid JSON"
             else:
-                stderr = result.stderr.lower()
-                if "sign in" in stderr or "bot" in stderr or "private" in stderr:
+                stderr = result.stderr.strip()
+                last_error = stderr or "Unknown error"
+                if "sign in" in stderr.lower() or "bot" in stderr.lower():
                     print(f"    ✗ Failed: Bot/Softblock detected.")
                 else:
-                    print(f"    ✗ Failed: {result.stderr[:50]}...")
-                    last_error = result.stderr
+                    print(f"    ✗ Failed: {stderr[:100]}...")
                     
         except Exception as e:
             print(f"    ✗ Error: {e}")
             last_error = str(e)
+            
+    # If we are here, everything failed.
+    # Provide a helpful message for server environments.
+    if sys.platform == 'linux' and "cookies" not in str(last_error).lower():
+         last_error += "\n(HINT: On cloud servers, you likely need a cookies.txt file to bypass YouTube login)"
             
     raise Exception(f"All Brutal strategies failed. Last error: {last_error}")
 
@@ -291,8 +374,11 @@ def download_video(url, quality='best', include_audio=True, download_id=None):
     try:
         strategy_args, _ = find_working_strategy(url, ytdlp)
         cmd.extend(strategy_args)
+        # Add proxy/token args if they weren't part of strategy
+        cmd.extend(get_proxy_args())
+        cmd.extend(get_hacker_args())
     except:
-        # Fallback to Chrome if discovery fails but we want to try anyway
+        # Fallback
         cmd.extend(['--cookies-from-browser', 'chrome'])
     
     cmd.append(url)
@@ -529,6 +615,8 @@ def stream_download():
     try:
         strategy_args, _ = find_working_strategy(url, ytdlp)
         cmd.extend(strategy_args)
+        cmd.extend(get_proxy_args())
+        cmd.extend(get_hacker_args())
     except:
         cmd.extend(['--cookies-from-browser', 'chrome'])
 
@@ -642,3 +730,5 @@ if __name__ == '__main__':
     # Run the Flask app
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=False, threaded=True)
+
+   
