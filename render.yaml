@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: mediagrab-pro
+    env: python
+    buildCommand: |
+      # Install ffmpeg from the OS package manager
+      apt-get update && apt-get install -y ffmpeg
+
+      # Install Python dependencies
+      pip install -r requirements.txt
+    startCommand: python server.py
